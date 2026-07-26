@@ -148,7 +148,10 @@ export function registerHandlers(bot: Bot): void {
       const ok = await sendToTopicOrRecreate(ctx, bot, userId, topicId);
       if (!ok) {
         // Topic was deleted — notify user, then create new one
-        await ctx.reply('🔒 Предыдущий чат закрыт по соображениям безопасности и конфиденциальности. Создан новый защищённый канал связи.');
+        await ctx.reply(
+  '🔒 Предыдущий чат очищен по соображениям безопасности и конфиденциальности. Создан новый защищённый канал связи.\n\n' +
+  'P.S. Мы не храним вашу переписку, ваши данные и пароли. Безопасность и конфиденциальность превыше всего.'
+);
         topicId = await createTopic(ctx, bot, userId);
         await ctx.forwardMessage(staffGroupId, { message_thread_id: topicId });
       }
