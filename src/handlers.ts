@@ -3,6 +3,7 @@ import { config } from './config.js';
 import * as store from './store.js';
 
 const VPN_BOT_LINK = 'https://t.me/HexaVeil_bot';
+const INACTIVITY_DAYS = 7;
 
 const staffGroupId = config.SUPPORT_STAFF_GROUP_ID;
 const MAX_TOPIC_NAME = 128;
@@ -27,6 +28,10 @@ const HELP_TEXT =
   USER_COMMANDS.map((c) => `  ${c}`).join('\n') +
   '\n\nОператор ответит вам в этом чате.';
 
+const PRIVACY_CLEANUP_MSG =
+  '🔒 Предыдущий чат очищен по соображениям безопасности и конфиденциальности. Создан новый защищённый канал связи.\n\n' +
+  'P.S. Мы не храним вашу переписку, ваши данные и пароли. Безопасность и конфиденциальность превыше всего.';
+
 async function notifyUser(bot: Bot, userId: number, text: string): Promise<void> {
   try {
     await bot.api.sendMessage(userId, text);
@@ -38,12 +43,14 @@ async function notifyUser(bot: Bot, userId: number, text: string): Promise<void>
 async function sendToTopicOrRecreate(ctx: any, bot: Bot, userId: number, topicId: number): Promise<boolean> {
   try {
     await ctx.forwardMessage(staffGroupId, { message_thread_id: topicId });
+    store.updateLastActivity(topicId);
     return true;
   } catch {
     // Topic may be closed — try reopen
     try {
       await bot.api.reopenForumTopic(staffGroupId, topicId);
       await ctx.forwardMessage(staffGroupId, { message_thread_id: topicId });
+      store.updateLastActivity(topicId);
       return true;
     } catch {
       // Topic is deleted or unrecoverable — remove old mapping
@@ -70,6 +77,48 @@ async function createTopic(ctx: any, bot: Bot, userId: number): Promise<number> 
   return topicId;
 }
 
+async function cleanupTopic(bot: Bot, topicId: number, userId: number): Promise<void> {
+  store.clearPendingCleanup(topicId);
+
+  // Notify the user
+  await notifyUser(bot, userId, PRIVACY_CLEANUP_MSG);
+
+  // Close and remove the topic
+  try {
+    await bot.api.closeForumTopic(staffGroupId, topicId);
+  } catch {
+    // may already be closed
+  }
+  store.removeMapping(userId);
+}
+
+export function startInactivityChecker(bot: Bot): void {
+  const CHECK_INTERVAL_MS = 60 * 60 * 1000; // every hour
+
+  async function check(): Promise<void> {
+    try {
+      const inactive = store.getInactiveTopicIds(INACTIVITY_DAYS);
+      for (const { topicId, userId } of inactive) {
+        if (store.isPendingCleanup(topicId)) continue;
+
+        const keyboard = new InlineKeyboard().text('🧹 Очистить чат', `cleanup:${topicId}`);
+        await bot.api.sendMessage(staffGroupId, `⚠️ Чат неактивен более ${INACTIVITY_DAYS} дней. Рекомендуется очистка.`, {
+          message_thread_id: topicId,
+          reply_markup: keyboard,
+        });
+        store.markPendingCleanup(topicId);
+      }
+    } catch (err) {
+      console.error('Inactivity checker error:', err);
+    }
+  }
+
+  // Run immediately on start, then every hour
+  setTimeout(check, 30_000); // first check after 30s (give bot time to connect)
+  setInterval(check, CHECK_INTERVAL_MS);
+  console.log(`Inactivity checker started: ${INACTIVITY_DAYS} days, check every hour`);
+}
+
 export function registerHandlers(bot: Bot): void {
   // /start in private chat
   bot.command('start', async (ctx) => {
@@ -81,6 +130,20 @@ export function registerHandlers(bot: Bot): void {
       `Добро пожаловать в поддержку! 👋\n\n${HELP_TEXT}`,
       { reply_markup: keyboard }
     );
+  });
+
+  // Cleanup callback from inactivity warning
+  bot.callbackQuery(/^cleanup:(\d+)$/, async (ctx) => {
+    const topicId = Number(ctx.match[1]);
+    const userId = store.getUserId(topicId);
+    if (!userId) {
+      await ctx.answerCallbackQuery({ text: '❌ Пользователь не найден.' });
+      return;
+    }
+
+    await cleanupTopic(bot, topicId, userId);
+    await ctx.editMessageText('✅ Чат очищен. Пользователь уведомлён.');
+    await ctx.answerCallbackQuery();
   });
 
   // Operator commands inside forum topics
@@ -158,10 +221,7 @@ export function registerHandlers(bot: Bot): void {
       const ok = await sendToTopicOrRecreate(ctx, bot, userId, topicId);
       if (!ok) {
         // Topic was deleted — notify user, then create new one
-        await ctx.reply(
-          '🔒 Предыдущий чат очищен по соображениям безопасности и конфиденциальности. Создан новый защищённый канал связи.\n\n' +
-          'P.S. Мы не храним вашу переписку, ваши данные и пароли. Безопасность и конфиденциальность превыше всего.'
-        );
+        await ctx.reply(PRIVACY_CLEANUP_MSG);
         topicId = await createTopic(ctx, bot, userId);
         await ctx.forwardMessage(staffGroupId, { message_thread_id: topicId });
       }
@@ -183,14 +243,16 @@ export function registerHandlers(bot: Bot): void {
     // Ignore commands (already handled above)
     if (ctx.msg.text?.startsWith('/')) return;
 
-    const userId = store.getUserId(ctx.msg.message_thread_id);
+    const topicId = ctx.msg.message_thread_id;
+    const userId = store.getUserId(topicId);
     if (!userId) return;
 
     try {
       await ctx.copyMessage(userId);
+      store.updateLastActivity(topicId);
     } catch {
       await ctx.reply('⚠️ Пользователь недоступен. Возможно, он удалил чат или заблокировал бота. Ответ не доставлен.', {
-        message_thread_id: ctx.msg.message_thread_id,
+        message_thread_id: topicId,
       });
     }
   });
