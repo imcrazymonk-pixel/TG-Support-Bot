@@ -1,6 +1,9 @@
-import { Bot } from 'grammy';
+import { Bot, Keyboard } from 'grammy';
 import { config } from './config.js';
 import * as store from './store.js';
+
+const VPN_BOT_LINK = 'https://t.me/HexaVeil_bot';
+const BTN_RETURN = 'Возврат к VPN Боту';
 
 const staffGroupId = config.SUPPORT_STAFF_GROUP_ID;
 const MAX_TOPIC_NAME = 128;
@@ -46,7 +49,15 @@ export function registerHandlers(bot: Bot): void {
   // /start in private chat
   bot.command('start', async (ctx) => {
     if (ctx.chat.type !== 'private') return;
-    await ctx.reply('Hello! Send your question and we will get back to you as soon as possible.');
+
+    const keyboard = new Keyboard()
+      .text(BTN_RETURN)
+      .resized();
+
+    await ctx.reply(
+      'Здравствуйте! Напишите ваш вопрос, и мы ответим вам в ближайшее время.',
+      { reply_markup: keyboard }
+    );
   });
 
   // Operator commands inside forum topics
@@ -106,57 +117,67 @@ export function registerHandlers(bot: Bot): void {
   });
 
   // User messages in private chat → forward to forum topic
-  bot.on('message', async (ctx) => {
-    // Private chat: user → topic
-    if (ctx.chat.type === 'private') {
-      const userId = ctx.from.id;
+  bot.on('message:text', async (ctx) => {
+    if (ctx.chat.type !== 'private') return;
 
-      if (store.isBanned(userId)) return;
+    const userId = ctx.from.id;
+    if (store.isBanned(userId)) return;
 
-      let topicId = store.getTopicId(userId);
-
-      if (topicId === undefined) {
-        // Create new forum topic
-        const topic = await bot.api.createForumTopic(staffGroupId, topicName(ctx.from));
-        topicId = topic.message_thread_id;
-        store.setMapping(userId, topicId);
-
-        // Send info message to the topic
-        const info = [
-          `New conversation`,
-          `Name: ${userDisplayName(ctx.from)}`,
-          `ID: ${userId}`,
-          ctx.from.username ? `Username: @${ctx.from.username}` : null,
-          `Date: ${new Date().toISOString()}`,
-        ].filter(Boolean).join('\n');
-        await bot.api.sendMessage(staffGroupId, info, { message_thread_id: topicId });
-      }
-
-      await forwardWithAutoReopen({
-        topicId,
-        sendToTopic: async (threadId) => {
-          await ctx.forwardMessage(staffGroupId, { message_thread_id: threadId });
-        },
-        reopenTopic: async (threadId) => {
-          await bot.api.reopenForumTopic(staffGroupId, threadId);
-        },
-      });
+    // Reply Keyboard button → redirect to VPN bot
+    if (ctx.msg.text === BTN_RETURN) {
+      await ctx.reply(
+        `Бот для покупки и настройки: ${VPN_BOT_LINK}`,
+        { disable_web_page_preview: true }
+      );
       return;
     }
 
-    // Staff group: operator reply → user
-    if (ctx.chat.id === staffGroupId && ctx.msg.message_thread_id) {
-      // Ignore service messages
-      if (ctx.msg.forum_topic_created || ctx.msg.forum_topic_closed || ctx.msg.forum_topic_reopened || ctx.msg.forum_topic_edited) return;
-      // Ignore bot's own messages
-      if (ctx.from?.id === bot.botInfo.id) return;
-      // Ignore commands (already handled above)
-      if (ctx.msg.text?.startsWith('/')) return;
+    // Regular message → forward to forum topic
+    let topicId = store.getTopicId(userId);
 
-      const userId = store.getUserId(ctx.msg.message_thread_id);
-      if (!userId) return;
+    if (topicId === undefined) {
+      // Create new forum topic
+      const topic = await bot.api.createForumTopic(staffGroupId, topicName(ctx.from));
+      topicId = topic.message_thread_id;
+      store.setMapping(userId, topicId);
 
-      await ctx.copyMessage(userId);
+      // Send info message to the topic
+      const info = [
+        `New conversation`,
+        `Name: ${userDisplayName(ctx.from)}`,
+        `ID: ${userId}`,
+        ctx.from.username ? `Username: @${ctx.from.username}` : null,
+        `Date: ${new Date().toISOString()}`,
+      ].filter(Boolean).join('\n');
+      await bot.api.sendMessage(staffGroupId, info, { message_thread_id: topicId });
     }
+
+    await forwardWithAutoReopen({
+      topicId,
+      sendToTopic: async (threadId) => {
+        await ctx.forwardMessage(staffGroupId, { message_thread_id: threadId });
+      },
+      reopenTopic: async (threadId) => {
+        await bot.api.reopenForumTopic(staffGroupId, threadId);
+      },
+    });
+    return;
+  });
+
+  // Staff group: operator reply → user
+  bot.on('message:text', async (ctx) => {
+    if (ctx.chat.id !== staffGroupId || !ctx.msg.message_thread_id) return;
+
+    // Ignore service messages
+    if (ctx.msg.forum_topic_created || ctx.msg.forum_topic_closed || ctx.msg.forum_topic_reopened || ctx.msg.forum_topic_edited) return;
+    // Ignore bot's own messages
+    if (ctx.from?.id === bot.botInfo.id) return;
+    // Ignore commands (already handled above)
+    if (ctx.msg.text?.startsWith('/')) return;
+
+    const userId = store.getUserId(ctx.msg.message_thread_id);
+    if (!userId) return;
+
+    await ctx.copyMessage(userId);
   });
 }
