@@ -57,35 +57,53 @@
 
 Добавьте [@getmyid_bot](https://t.me/getmyid_bot) в группу или перешлите сообщение из группы — он покажет ID чата (отрицательное число, например `-100123456789`).
 
-### 4. Настройте окружение
+### 4. Клонируйте репозиторий на сервер
 
-Скопируйте `.env.example` в `.env` и заполните:
+Зайдите на VPS по SSH:
+
+```bash
+git clone https://github.com/imcrazymonk-pixel/TG-Support-Bot.git /opt/support-bot
+cd /opt/support-bot
+```
+
+### 5. Настройте окружение
 
 ```bash
 cp .env.example .env
+nano .env
 ```
 
+Вставьте свои данные:
+
 ```env
-SUPPORT_BOT_TOKEN=123456:ABC-DEF...         # обязательно
-SUPPORT_STAFF_GROUP_ID=-100123456789         # обязательно
+SUPPORT_BOT_TOKEN=123456:ABC-DEF...         # обязательно — токен от @BotFather
+SUPPORT_STAFF_GROUP_ID=-100123456789         # обязательно — ID супергруппы (с минусом)
 SUPPORT_STORE_PATH=/app/data/topics.json     # опционально, по умолчанию
 ```
 
-### 5. Запустите через Docker
+### 6. Запустите
 
 ```bash
-# Сборка и запуск
 sudo docker compose up -d
 
-# Просмотр логов
+# Просмотр логов (убедиться, что бот подключился)
 sudo docker compose logs -f
-
-# Остановка
-sudo docker compose down
-
-# Перезапуск после изменений
-sudo docker compose down && sudo docker compose up -d --build
 ```
+
+Контейнер установит зависимости, соберёт TypeScript и запустит бота.
+
+Данные (привязки пользователей к топикам) сохраняются в `./data/topics.json` на сервере и не пропадают при перезапуске контейнера.
+
+### Полезные команды
+
+| Действие | Команда |
+|----------|---------|
+| Внёс правки локально → запуш | `git push` |
+| Обновить код на сервере | `git pull` |
+| Запустить бота | `sudo docker compose up -d` |
+| Остановить бота | `sudo docker compose down` |
+| Перезапустить после обновления | `sudo docker compose down && sudo docker compose up -d` |
+| Посмотреть логи | `sudo docker compose logs -f` |
 
 ## Команды
 
