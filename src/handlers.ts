@@ -147,7 +147,8 @@ export function registerHandlers(bot: Bot): void {
       // Existing user → try forwarding to existing topic
       const ok = await sendToTopicOrRecreate(ctx, bot, userId, topicId);
       if (!ok) {
-        // Topic was deleted — create a new one
+        // Topic was deleted — notify user, then create new one
+        await ctx.reply('🔒 История предыдущей переписки очищена. Создан новый чат поддержки.');
         topicId = await createTopic(ctx, bot, userId);
         await ctx.forwardMessage(staffGroupId, { message_thread_id: topicId });
       }
@@ -175,7 +176,9 @@ export function registerHandlers(bot: Bot): void {
     try {
       await ctx.copyMessage(userId);
     } catch {
-      // User may have blocked the bot or deleted the chat — ignore.
+      await ctx.reply('⚠️ Пользователь недоступен (удалил чат или заблокировал бота). Ответ не доставлен.', {
+        message_thread_id: ctx.msg.message_thread_id,
+      });
     }
   });
 }
