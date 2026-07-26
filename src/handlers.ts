@@ -17,6 +17,16 @@ function topicName(from: { first_name: string; last_name?: string; username?: st
   return display.length <= MAX_TOPIC_NAME ? display : display.slice(0, MAX_TOPIC_NAME - 1) + '…';
 }
 
+const USER_COMMANDS = [
+  '📝 Просто отправьте сообщение — и мы создадим обращение',
+  '🔙 /start — показать это сообщение снова',
+];
+
+const HELP_TEXT =
+  'Доступные вам команды:\n\n' +
+  USER_COMMANDS.map((c) => `  ${c}`).join('\n') +
+  '\n\nОператор ответит вам в этом чате.';
+
 async function notifyUser(bot: Bot, userId: number, text: string): Promise<void> {
   try {
     await bot.api.sendMessage(userId, text);
@@ -68,7 +78,7 @@ export function registerHandlers(bot: Bot): void {
     const keyboard = new InlineKeyboard().url('Вернуться в VPN Бот', VPN_BOT_LINK);
 
     await ctx.reply(
-      'Здравствуйте! 👋\n\nНапишите ваш вопрос, и мы ответим вам в ближайшее время.',
+      `Добро пожаловать в поддержку! 👋\n\n${HELP_TEXT}`,
       { reply_markup: keyboard }
     );
   });
@@ -83,9 +93,9 @@ export function registerHandlers(bot: Bot): void {
     } catch {
       // topic may already be closed
     }
-    await ctx.reply('✅ Тикет закрыт. Если у пользователя появятся вопросы — он просто напишет новое сообщение.');
+    await ctx.reply('✅ Тикет закрыт. Пользователь уведомлён.');
     if (userId) {
-      await notifyUser(bot, userId, '✅ Ваш тикет закрыт. Если остались вопросы — просто напишите новое сообщение.');
+      await notifyUser(bot, userId, '✅ Ваше обращение закрыто. Если нужна будет помощь — просто напишите нам, и мы откроем новый чат.');
     }
   });
 
@@ -95,7 +105,7 @@ export function registerHandlers(bot: Bot): void {
       await bot.api.reopenForumTopic(staffGroupId, ctx.msg.message_thread_id);
       await ctx.reply('🔄 Тикет открыт.');
     } catch {
-      await ctx.reply('❌ Не удалось открыть тикет. Возможно, он уже открыт.');
+      await ctx.reply('❌ Не удалось открыть — тикет уже открыт или был удалён.');
     }
   });
 
@@ -104,7 +114,7 @@ export function registerHandlers(bot: Bot): void {
     const topicId = ctx.msg.message_thread_id;
     const userId = store.getUserId(topicId);
     if (!userId) {
-      await ctx.reply('❌ Не удалось найти пользователя для этого тикета.');
+      await ctx.reply('❌ Пользователь не найден. Возможно, тикет создан не через бота.');
       return;
     }
     store.ban(userId);
@@ -113,22 +123,22 @@ export function registerHandlers(bot: Bot): void {
     } catch {
       // topic may already be closed
     }
-    await notifyUser(bot, userId, '🚫 Вы заблокированы в поддержке.');
-    await ctx.reply(`🚫 Пользователь ${userId} заблокирован.`);
+    await notifyUser(bot, userId, '🚫 Вам ограничен доступ в поддержку. Если считаете, что это ошибка — обратитесь в другой канал связи.');
+    await ctx.reply(`🚫 Пользователь ${userId} заблокирован. Тикет закрыт.`);
   });
 
   bot.command('unban', async (ctx) => {
     if (ctx.chat.id !== staffGroupId || !ctx.msg.message_thread_id) return;
     const userId = store.getUserId(ctx.msg.message_thread_id);
     if (!userId) {
-      await ctx.reply('❌ Не удалось найти пользователя для этого тикета.');
+      await ctx.reply('❌ Пользователь не найден. Возможно, тикет создан не через бота.');
       return;
     }
     if (!store.unban(userId)) {
-      await ctx.reply('⚠️ Этот пользователь не заблокирован.');
+      await ctx.reply('⚠️ Этот пользователь не в бане.');
       return;
     }
-    await ctx.reply(`✅ Пользователь ${userId} разблокирован.`);
+    await ctx.reply(`✅ Пользователь ${userId} разблокирован. Он снова может писать в поддержку.`);
   });
 
   // User messages in private chat → forward to forum topic
@@ -149,9 +159,9 @@ export function registerHandlers(bot: Bot): void {
       if (!ok) {
         // Topic was deleted — notify user, then create new one
         await ctx.reply(
-  '🔒 Предыдущий чат очищен по соображениям безопасности и конфиденциальности. Создан новый защищённый канал связи.\n\n' +
-  'P.S. Мы не храним вашу переписку, ваши данные и пароли. Безопасность и конфиденциальность превыше всего.'
-);
+          '🔒 Предыдущий чат очищен по соображениям безопасности и конфиденциальности. Создан новый защищённый канал связи.\n\n' +
+          'P.S. Мы не храним вашу переписку, ваши данные и пароли. Безопасность и конфиденциальность превыше всего.'
+        );
         topicId = await createTopic(ctx, bot, userId);
         await ctx.forwardMessage(staffGroupId, { message_thread_id: topicId });
       }
@@ -179,7 +189,7 @@ export function registerHandlers(bot: Bot): void {
     try {
       await ctx.copyMessage(userId);
     } catch {
-      await ctx.reply('⚠️ Пользователь недоступен (удалил чат или заблокировал бота). Ответ не доставлен.', {
+      await ctx.reply('⚠️ Пользователь недоступен. Возможно, он удалил чат или заблокировал бота. Ответ не доставлен.', {
         message_thread_id: ctx.msg.message_thread_id,
       });
     }
