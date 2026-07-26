@@ -172,6 +172,10 @@ export function registerHandlers(bot: Bot): void {
     const userId = store.getUserId(ctx.msg.message_thread_id);
     if (!userId) return;
 
-    await ctx.copyMessage(userId);
+    try {
+      await ctx.copyMessage(userId);
+    } catch {
+      // User may have blocked the bot or deleted the chat — ignore.
+    }
   });
 }
