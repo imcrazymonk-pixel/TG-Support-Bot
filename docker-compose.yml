@@ -1,0 +1,16 @@
+services:
+  support-bot:
+    image: node:20-alpine
+    container_name: vpn_support_bot
+    restart: always
+    working_dir: /app
+    environment:
+      - SUPPORT_BOT_TOKEN=${SUPPORT_BOT_TOKEN}
+      - SUPPORT_STAFF_GROUP_ID=${SUPPORT_STAFF_GROUP_ID}
+      - SUPPORT_STORE_PATH=/app/data/topics.json
+    volumes:
+      - .:/app
+    command: >
+      sh -c "npm install &&
+             npm run build &&
+             node dist/index.js"

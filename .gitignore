@@ -3,3 +3,4 @@ dist/
 .env
 data/topics.json
 *.tmp
+kilo-skills-*

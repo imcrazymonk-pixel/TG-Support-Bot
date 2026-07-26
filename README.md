@@ -5,123 +5,128 @@
 <h1 align="center">Telegram Support Bot</h1>
 
 <p align="center">
-  Minimal Telegram support bot that turns a forum group into a helpdesk.<br>
-  User sends a DM → bot creates a forum topic → operator replies in the topic → reply goes back to the user.
+  Минималистичный Telegram-бот поддержки, превращающий группу-форум в хелпдеск.<br>
+  Пользователь пишет в ЛС → бот создаёт тему в форуме → оператор отвечает в теме → ответ уходит пользователю.
 </p>
 
 <p align="center">
-  <a href="#features">Features</a> •
-  <a href="#how-it-works">How it works</a> •
-  <a href="#setup">Setup</a> •
-  <a href="#commands">Commands</a> •
-  <a href="#architecture">Architecture</a> •
-  <a href="#license">License</a>
+  <a href="#возможности">Возможности</a> •
+  <a href="#как-это-работает">Как это работает</a> •
+  <a href="#установка">Установка</a> •
+  <a href="#команды">Команды</a> •
+  <a href="#архитектура">Архитектура</a> •
+  <a href="#лицензия">Лицензия</a>
 </p>
 
 ---
 
-## Features
+## Возможности
 
-- One dependency — [grammY](https://grammy.dev)
-- Polling mode — no webhook, no HTTP server needed
-- JSON file persistence — no database required
-- Auto-reopens closed topics when users send new messages
-- Operator commands: close, reopen, ban, unban
+- Одна зависимость — [grammY](https://grammy.dev)
+- Режим polling — не нужен вебхук или HTTP-сервер
+- Хранение в JSON-файле — не требуется база данных
+- Автоматическое переоткрытие закрытых тем при новых сообщениях от пользователя
+- Команды оператора: закрыть, открыть, заблокировать, разблокировать
 
-## How it works
+## Как это работает
 
-1. User sends a message to the bot in a private chat
-2. Bot creates a **Forum Topic** in the staff group with the user's name
-3. Message is forwarded to the newly created topic
-4. Operator replies inside the topic
-5. Bot copies the reply back to the user (without "forwarded from" label)
-6. Subsequent messages from the same user go to the same topic
+1. Пользователь отправляет сообщение боту в личный чат
+2. Бот создаёт **тему форума** в группе персонала с именем пользователя
+3. Сообщение пересылается в созданную тему
+4. Оператор отвечает внутри темы
+5. Бот копирует ответ обратно пользователю (без пометки «переслано от»)
+6. Последующие сообщения от того же пользователя попадают в ту же тему
 
-## Setup
+## Установка
 
-### 1. Create a bot
+### 1. Создайте бота
 
-Create a bot via [@BotFather](https://t.me/BotFather) and save the token.
+Создайте бота через [@BotFather](https://t.me/BotFather) и сохраните токен.
 
-### 2. Create a forum group
+### 2. Создайте группу-форум
 
-1. Create a group in Telegram
-2. Convert it to a supergroup (Settings → Chat History → Visible)
-3. Enable Topics (Settings → Topics)
-4. Add the bot to the group and make it an admin with permissions:
-   - Manage Topics
-   - Send Messages
-   - Delete Messages
+1. Создайте группу в Telegram
+2. Преобразуйте её в супергруппу (Настройки → История чата → Видна)
+3. Включите темы (Настройки → Темы)
+4. Добавьте бота в группу и сделайте его администратором с правами:
+   - Управление темами
+   - Отправка сообщений
+   - Удаление сообщений
 
-### 3. Get the group ID
+### 3. Получите ID группы
 
-Add [@getmyid_bot](https://t.me/getmyid_bot) to the group or forward a message from the group — it will show the chat ID (a negative number like `-100123456789`).
+Добавьте [@getmyid_bot](https://t.me/getmyid_bot) в группу или перешлите сообщение из группы — он покажет ID чата (отрицательное число, например `-100123456789`).
 
-### 4. Configure environment
+### 4. Настройте окружение
+
+Скопируйте `.env.example` в `.env` и заполните:
 
 ```bash
 cp .env.example .env
 ```
 
 ```env
-SUPPORT_BOT_TOKEN=123456:ABC-DEF...         # required
-SUPPORT_STAFF_GROUP_ID=-100123456789         # required
-SUPPORT_STORE_PATH=./data/topics.json        # optional, default
+SUPPORT_BOT_TOKEN=123456:ABC-DEF...         # обязательно
+SUPPORT_STAFF_GROUP_ID=-100123456789         # обязательно
+SUPPORT_STORE_PATH=/app/data/topics.json     # опционально, по умолчанию
 ```
 
-### 5. Install and run
+### 5. Запустите через Docker
 
 ```bash
-npm install
+# Сборка и запуск
+sudo docker compose up -d
 
-# Development (hot-reload)
-npm run dev
+# Просмотр логов
+sudo docker compose logs -f
 
-# Production
-npm run build
-npm start
+# Остановка
+sudo docker compose down
+
+# Перезапуск после изменений
+sudo docker compose down && sudo docker compose up -d --build
 ```
 
-## Commands
+## Команды
 
-### User commands (private chat)
+### Команды пользователя (личный чат)
 
-| Command  | Description         |
-| -------- | ------------------- |
-| `/start` | Welcome message     |
+| Команда   | Описание              |
+| --------- | --------------------- |
+| `/start`  | Приветственное сообщение |
 
-### Operator commands (inside a forum topic)
+### Команды оператора (внутри темы форума)
 
-| Command   | Description                          |
-| --------- | ------------------------------------ |
-| `/close`  | Close the ticket, notify the user    |
-| `/reopen` | Reopen a closed ticket               |
-| `/ban`    | Ban the user and close the ticket    |
-| `/unban`  | Unban the user                       |
+| Команда    | Описание                               |
+| ---------- | -------------------------------------- |
+| `/close`   | Закрыть тикет, уведомить пользователя   |
+| `/reopen`  | Открыть закрытый тикет                  |
+| `/ban`     | Заблокировать пользователя и закрыть тикет |
+| `/unban`   | Разблокировать пользователя              |
 
-## Architecture
+## Архитектура
 
 ```
 src/
-  index.ts      — Entry point: polling + graceful shutdown
-  config.ts     — Environment variables with fail-fast validation
-  bot.ts        — createBot() factory
-  handlers.ts   — Message and command handlers
-  store.ts      — In-memory store with JSON file persistence
+  index.ts      — Точка входа: polling + graceful shutdown
+  config.ts     — Переменные окружения с валидацией (fail-fast)
+  bot.ts        — Фабрика createBot()
+  handlers.ts   — Обработчики сообщений и команд
+  store.ts      — Хранилище в памяти с персистентностью в JSON-файл
 ```
 
-- **No database** — user-to-topic mappings are stored in memory and persisted to a JSON file using atomic writes (write to temp file, then rename)
-- **No webhook** — uses long polling, works behind NAT/firewalls without extra setup
-- **Single dependency** — only [grammY](https://grammy.dev) for the Telegram Bot API
+- **Нет базы данных** — привязки пользователь→тема хранятся в памяти и сохраняются в JSON-файл через атомарную запись (запись во временный файл, затем переименование)
+- **Нет вебхука** — используется long polling, работает за NAT/файрволом без дополнительной настройки
+- **Одна зависимость** — только [grammY](https://grammy.dev) для Telegram Bot API
 
-## Testing
+## Тестирование
 
 ```bash
 npm test
 ```
 
-Tests use Node.js built-in test runner — no extra test framework needed.
+Тесты используют встроенный test runner Node.js — не требуется дополнительный фреймворк.
 
-## License
+## Лицензия
 
 [MIT](LICENSE)
