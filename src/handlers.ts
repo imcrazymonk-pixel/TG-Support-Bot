@@ -127,7 +127,7 @@ export function registerHandlers(bot: Bot): void {
     if (ctx.msg.text === BTN_RETURN) {
       await ctx.reply(
         `Бот для покупки и настройки: ${VPN_BOT_LINK}`,
-        { disable_web_page_preview: true }
+        { link_preview_options: { is_disabled: true } }
       );
       return;
     }
