@@ -125,6 +125,9 @@ export function registerHandlers(bot: Bot): void {
 
     // Reply Keyboard button → redirect to VPN bot
     if (ctx.msg.text === BTN_RETURN) {
+      // Delete the user's button-press message (no trace left in chat)
+      await ctx.api.deleteMessage(ctx.chat.id, ctx.msg.message_id);
+      // Send inline button to open VPN bot
       const inlineKeyboard = new InlineKeyboard().url('Перейти в VPN Бот', VPN_BOT_LINK);
       await ctx.reply('Перейти в VPN Бот', {
         reply_markup: inlineKeyboard,
