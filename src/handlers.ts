@@ -1,9 +1,8 @@
-import { Bot, InlineKeyboard, Keyboard } from 'grammy';
+import { Bot, InlineKeyboard } from 'grammy';
 import { config } from './config.js';
 import * as store from './store.js';
 
 const VPN_BOT_LINK = 'https://t.me/HexaVeil_bot';
-const BTN_RETURN = 'Возврат к VPN Боту';
 
 const staffGroupId = config.SUPPORT_STAFF_GROUP_ID;
 const MAX_TOPIC_NAME = 128;
@@ -50,12 +49,10 @@ export function registerHandlers(bot: Bot): void {
   bot.command('start', async (ctx) => {
     if (ctx.chat.type !== 'private') return;
 
-    const keyboard = new Keyboard()
-      .text(BTN_RETURN)
-      .resized();
+    const keyboard = new InlineKeyboard().url('Вернуться в VPN Бот', VPN_BOT_LINK);
 
     await ctx.reply(
-      'Здравствуйте! Напишите ваш вопрос, и мы ответим вам в ближайшее время.',
+      'Здравствуйте! 👋\n\nНапишите ваш вопрос, и мы ответим вам в ближайшее время.',
       { reply_markup: keyboard }
     );
   });
@@ -70,8 +67,9 @@ export function registerHandlers(bot: Bot): void {
     } catch {
       // topic may already be closed
     }
+    await ctx.reply('✅ Тикет закрыт. Если у пользователя появятся вопросы — он просто напишет новое сообщение.');
     if (userId) {
-      await notifyUser(bot, userId, 'Your ticket has been closed. If you have more questions, just send a new message.');
+      await notifyUser(bot, userId, '✅ Ваш тикет закрыт. Если остались вопросы — просто напишите новое сообщение.');
     }
   });
 
@@ -79,8 +77,9 @@ export function registerHandlers(bot: Bot): void {
     if (ctx.chat.id !== staffGroupId || !ctx.msg.message_thread_id) return;
     try {
       await bot.api.reopenForumTopic(staffGroupId, ctx.msg.message_thread_id);
+      await ctx.reply('🔄 Тикет открыт.');
     } catch {
-      // topic may already be open
+      await ctx.reply('❌ Не удалось открыть тикет. Возможно, он уже открыт.');
     }
   });
 
@@ -89,7 +88,7 @@ export function registerHandlers(bot: Bot): void {
     const topicId = ctx.msg.message_thread_id;
     const userId = store.getUserId(topicId);
     if (!userId) {
-      await ctx.reply('Could not find a user for this topic.');
+      await ctx.reply('❌ Не удалось найти пользователя для этого тикета.');
       return;
     }
     store.ban(userId);
@@ -98,22 +97,22 @@ export function registerHandlers(bot: Bot): void {
     } catch {
       // topic may already be closed
     }
-    await notifyUser(bot, userId, 'You have been blocked from support.');
-    await ctx.reply(`User ${userId} has been banned.`);
+    await notifyUser(bot, userId, '🚫 Вы заблокированы в поддержке.');
+    await ctx.reply(`🚫 Пользователь ${userId} заблокирован.`);
   });
 
   bot.command('unban', async (ctx) => {
     if (ctx.chat.id !== staffGroupId || !ctx.msg.message_thread_id) return;
     const userId = store.getUserId(ctx.msg.message_thread_id);
     if (!userId) {
-      await ctx.reply('Could not find a user for this topic.');
+      await ctx.reply('❌ Не удалось найти пользователя для этого тикета.');
       return;
     }
     if (!store.unban(userId)) {
-      await ctx.reply('This user is not banned.');
+      await ctx.reply('⚠️ Этот пользователь не заблокирован.');
       return;
     }
-    await ctx.reply(`User ${userId} has been unbanned.`);
+    await ctx.reply(`✅ Пользователь ${userId} разблокирован.`);
   });
 
   // User messages in private chat → forward to forum topic
@@ -122,18 +121,6 @@ export function registerHandlers(bot: Bot): void {
 
     const userId = ctx.from.id;
     if (store.isBanned(userId)) return;
-
-    // Reply Keyboard button → redirect to VPN bot
-    if (ctx.msg.text === BTN_RETURN) {
-      // Delete the user's button-press message (no trace left in chat)
-      await ctx.api.deleteMessage(ctx.chat.id, ctx.msg.message_id);
-      // Send inline button to open VPN bot
-      const inlineKeyboard = new InlineKeyboard().url('Перейти в VPN Бот', VPN_BOT_LINK);
-      await ctx.reply('Перейти в VPN Бот', {
-        reply_markup: inlineKeyboard,
-      });
-      return;
-    }
 
     // Regular message → forward to forum topic
     let topicId = store.getTopicId(userId);
@@ -146,11 +133,11 @@ export function registerHandlers(bot: Bot): void {
 
       // Send info message to the topic
       const info = [
-        `New conversation`,
-        `Name: ${userDisplayName(ctx.from)}`,
+        `🆕 Новое обращение`,
+        `Имя: ${userDisplayName(ctx.from)}`,
         `ID: ${userId}`,
         ctx.from.username ? `Username: @${ctx.from.username}` : null,
-        `Date: ${new Date().toISOString()}`,
+        `Дата: ${new Date().toISOString()}`,
       ].filter(Boolean).join('\n');
       await bot.api.sendMessage(staffGroupId, info, { message_thread_id: topicId });
     }
