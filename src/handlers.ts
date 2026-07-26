@@ -1,4 +1,4 @@
-import { Bot, Keyboard } from 'grammy';
+import { Bot, InlineKeyboard, Keyboard } from 'grammy';
 import { config } from './config.js';
 import * as store from './store.js';
 
@@ -125,10 +125,10 @@ export function registerHandlers(bot: Bot): void {
 
     // Reply Keyboard button → redirect to VPN bot
     if (ctx.msg.text === BTN_RETURN) {
-      await ctx.reply(
-        `Бот для покупки и настройки: ${VPN_BOT_LINK}`,
-        { link_preview_options: { is_disabled: true } }
-      );
+      const inlineKeyboard = new InlineKeyboard().url('Перейти в VPN Бот', VPN_BOT_LINK);
+      await ctx.reply('Нажмите кнопку ниже, чтобы перейти в бота:', {
+        reply_markup: inlineKeyboard,
+      });
       return;
     }
 
