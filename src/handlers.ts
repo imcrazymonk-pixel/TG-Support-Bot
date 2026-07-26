@@ -126,7 +126,7 @@ export function registerHandlers(bot: Bot): void {
     // Reply Keyboard button → redirect to VPN bot
     if (ctx.msg.text === BTN_RETURN) {
       const inlineKeyboard = new InlineKeyboard().url('Перейти в VPN Бот', VPN_BOT_LINK);
-      await ctx.reply('Нажмите кнопку ниже, чтобы перейти в бота:', {
+      await ctx.reply('Перейти в VPN Бот', {
         reply_markup: inlineKeyboard,
       });
       return;
