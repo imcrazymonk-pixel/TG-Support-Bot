@@ -25,23 +25,39 @@ async function notifyUser(bot: Bot, userId: number, text: string): Promise<void>
   }
 }
 
-export async function forwardWithAutoReopen(params: {
-  topicId: number;
-  sendToTopic: (topicId: number) => Promise<void>;
-  reopenTopic: (topicId: number) => Promise<void>;
-}): Promise<void> {
+async function sendToTopicOrRecreate(ctx: any, bot: Bot, userId: number, topicId: number): Promise<boolean> {
   try {
-    await params.sendToTopic(params.topicId);
-    return;
+    await ctx.forwardMessage(staffGroupId, { message_thread_id: topicId });
+    return true;
   } catch {
-    // Most common case: topic was closed by operator.
+    // Topic may be closed — try reopen
     try {
-      await params.reopenTopic(params.topicId);
+      await bot.api.reopenForumTopic(staffGroupId, topicId);
+      await ctx.forwardMessage(staffGroupId, { message_thread_id: topicId });
+      return true;
     } catch {
-      // If reopen fails, still try one last send for transient API flaps.
+      // Topic is deleted or unrecoverable — remove old mapping
+      store.removeMapping(userId);
+      return false;
     }
-    await params.sendToTopic(params.topicId);
   }
+}
+
+async function createTopic(ctx: any, bot: Bot, userId: number): Promise<number> {
+  const topic = await bot.api.createForumTopic(staffGroupId, topicName(ctx.from));
+  const topicId = topic.message_thread_id;
+  store.setMapping(userId, topicId);
+
+  const info = [
+    `🆕 Новое обращение`,
+    `Имя: ${userDisplayName(ctx.from)}`,
+    `ID: ${userId}`,
+    ctx.from.username ? `Username: @${ctx.from.username}` : null,
+    `Дата: ${new Date().toISOString()}`,
+  ].filter(Boolean).join('\n');
+  await bot.api.sendMessage(staffGroupId, info, { message_thread_id: topicId });
+
+  return topicId;
 }
 
 export function registerHandlers(bot: Bot): void {
@@ -122,36 +138,24 @@ export function registerHandlers(bot: Bot): void {
     const userId = ctx.from.id;
     if (store.isBanned(userId)) return;
 
-    // Regular message → forward to forum topic
     let topicId = store.getTopicId(userId);
 
     if (topicId === undefined) {
-      // Create new forum topic
-      const topic = await bot.api.createForumTopic(staffGroupId, topicName(ctx.from));
-      topicId = topic.message_thread_id;
-      store.setMapping(userId, topicId);
-
-      // Send info message to the topic
-      const info = [
-        `🆕 Новое обращение`,
-        `Имя: ${userDisplayName(ctx.from)}`,
-        `ID: ${userId}`,
-        ctx.from.username ? `Username: @${ctx.from.username}` : null,
-        `Дата: ${new Date().toISOString()}`,
-      ].filter(Boolean).join('\n');
-      await bot.api.sendMessage(staffGroupId, info, { message_thread_id: topicId });
+      // New user → create topic
+      topicId = await createTopic(ctx, bot, userId);
+    } else {
+      // Existing user → try forwarding to existing topic
+      const ok = await sendToTopicOrRecreate(ctx, bot, userId, topicId);
+      if (!ok) {
+        // Topic was deleted — create a new one
+        topicId = await createTopic(ctx, bot, userId);
+        await ctx.forwardMessage(staffGroupId, { message_thread_id: topicId });
+      }
+      return;
     }
 
-    await forwardWithAutoReopen({
-      topicId,
-      sendToTopic: async (threadId) => {
-        await ctx.forwardMessage(staffGroupId, { message_thread_id: threadId });
-      },
-      reopenTopic: async (threadId) => {
-        await bot.api.reopenForumTopic(staffGroupId, threadId);
-      },
-    });
-    return;
+    // First message from new user: forward and send info
+    await ctx.forwardMessage(staffGroupId, { message_thread_id: topicId });
   });
 
   // Staff group: operator reply → user

@@ -61,6 +61,15 @@ export function setMapping(userId: number, topicId: number): void {
   persist();
 }
 
+export function removeMapping(userId: number): void {
+  const oldTopicId = userIdToTopicId.get(userId);
+  if (oldTopicId !== undefined) {
+    topicIdToUserId.delete(oldTopicId);
+  }
+  userIdToTopicId.delete(userId);
+  persist();
+}
+
 export function isBanned(userId: number): boolean {
   return bannedUserIds.has(userId);
 }
