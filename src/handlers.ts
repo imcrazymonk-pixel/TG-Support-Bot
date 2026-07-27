@@ -197,6 +197,11 @@ export function registerHandlers(bot: Bot): void {
       return;
     }
 
+    // Notify operator in the topic before closing
+    await bot.api.sendMessage(staffGroupId, '🔚 Пользователь завершил чат.', {
+      message_thread_id: topicId,
+    });
+
     try {
       await bot.api.closeForumTopic(staffGroupId, topicId);
     } catch {
