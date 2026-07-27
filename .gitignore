@@ -4,3 +4,5 @@ dist/
 data/topics.json
 *.tmp
 kilo-skills-*
+docs/superpowers/plans/
+docs/superpowers/specs/
