@@ -8,6 +8,42 @@ const INACTIVITY_DAYS = 7;
 const staffGroupId = config.SUPPORT_STAFF_GROUP_ID;
 const MAX_TOPIC_NAME = 128;
 
+// ── Spam protection ──
+const SPAM_WINDOW_MS = 20_000;      // 20 seconds
+const SPAM_LIMIT = 10;              // messages
+const SPAM_MUTE_MS = 60_000;        // 60 seconds
+const userMsgTimestamps = new Map<number, number[]>();
+const userMutedUntil = new Map<number, number>();
+
+function checkSpam(userId: number): { allowed: boolean; remainingSec?: number } {
+  // Check if currently muted
+  const mutedUntil = userMutedUntil.get(userId);
+  if (mutedUntil && Date.now() < mutedUntil) {
+    const remaining = Math.ceil((mutedUntil - Date.now()) / 1000);
+    return { allowed: false, remainingSec: remaining };
+  }
+
+  // Clean old timestamps
+  const now = Date.now();
+  const cutoff = now - SPAM_WINDOW_MS;
+  let timestamps = userMsgTimestamps.get(userId) || [];
+  timestamps = timestamps.filter((t) => t > cutoff);
+
+  // Add current message
+  timestamps.push(now);
+  userMsgTimestamps.set(userId, timestamps);
+
+  // Check limit
+  if (timestamps.length > SPAM_LIMIT) {
+    userMutedUntil.set(userId, now + SPAM_MUTE_MS);
+    userMsgTimestamps.delete(userId);
+    return { allowed: false, remainingSec: 60 };
+  }
+
+  return { allowed: true };
+}
+// ─────────────────────
+
 function userDisplayName(from: { first_name: string; last_name?: string; username?: string }): string {
   const name = from.last_name ? `${from.first_name} ${from.last_name}` : from.first_name;
   return from.username ? `${name} (@${from.username})` : name;
@@ -18,15 +54,12 @@ function topicName(from: { first_name: string; last_name?: string; username?: st
   return display.length <= MAX_TOPIC_NAME ? display : display.slice(0, MAX_TOPIC_NAME - 1) + '…';
 }
 
-const USER_COMMANDS = [
-  '📝 Просто отправьте сообщение — и мы создадим обращение',
-  '🔙 /start — показать это сообщение снова',
-];
-
 const HELP_TEXT =
   'Доступные вам команды:\n\n' +
-  USER_COMMANDS.map((c) => `  ${c}`).join('\n') +
-  '\n\nОператор ответит вам в этом чате.';
+  '  📝 Просто отправьте сообщение — и мы создадим обращение\n' +
+  '  🆔 /myid — показать ваш Telegram ID\n' +
+  '  🔙 /start — показать это сообщение снова\n' +
+  '\nВы также можете отправлять фото, файлы и другие медиа.';
 
 const PRIVACY_CLEANUP_MSG =
   '🔒 Предыдущий чат очищен по соображениям безопасности и конфиденциальности. Создан новый защищённый канал связи.\n\n' +
@@ -38,6 +71,20 @@ async function notifyUser(bot: Bot, userId: number, text: string): Promise<void>
   } catch {
     // User may have blocked the bot — nothing we can do.
   }
+}
+
+function isUserContent(msg: any): boolean {
+  return !!(
+    msg.text ||
+    msg.photo ||
+    msg.document ||
+    msg.video ||
+    msg.audio ||
+    msg.voice ||
+    msg.sticker ||
+    msg.animation ||
+    msg.video_note
+  );
 }
 
 async function sendToTopicOrRecreate(ctx: any, bot: Bot, userId: number, topicId: number): Promise<boolean> {
@@ -124,12 +171,40 @@ export function registerHandlers(bot: Bot): void {
   bot.command('start', async (ctx) => {
     if (ctx.chat.type !== 'private') return;
 
-    const keyboard = new InlineKeyboard().url('Вернуться в VPN Бот', VPN_BOT_LINK);
+    const keyboard = InlineKeyboard.from([
+      [{ text: '❌ Завершить чат', callback_data: 'close_mychat' }],
+      [{ text: 'Вернуться в VPN Бот', url: VPN_BOT_LINK }],
+    ]);
 
     await ctx.reply(
       `Добро пожаловать в поддержку! 👋\n\n${HELP_TEXT}`,
       { reply_markup: keyboard }
     );
+  });
+
+  // /myid — show user's Telegram ID
+  bot.command('myid', async (ctx) => {
+    if (ctx.chat.type !== 'private' || !ctx.from) return;
+    await ctx.reply(`🆔 Ваш Telegram ID: \`${ctx.from.id}\``, { parse_mode: 'Markdown' });
+  });
+
+  // Close own chat (from /start button)
+  bot.callbackQuery('close_mychat', async (ctx) => {
+    const userId = ctx.from.id;
+    const topicId = store.getTopicId(userId);
+    if (topicId === undefined) {
+      await ctx.answerCallbackQuery({ text: '❌ У вас нет активного чата.' });
+      return;
+    }
+
+    try {
+      await bot.api.closeForumTopic(staffGroupId, topicId);
+    } catch {
+      // may already be closed
+    }
+    await notifyUser(bot, userId, '✅ Ваше обращение закрыто. Если нужна будет помощь — просто напишите нам.');
+    await ctx.editMessageText('✅ Чат завершён.');
+    await ctx.answerCallbackQuery();
   });
 
   // Cleanup callback from inactivity warning
@@ -204,12 +279,24 @@ export function registerHandlers(bot: Bot): void {
     await ctx.reply(`✅ Пользователь ${userId} разблокирован. Он снова может писать в поддержку.`);
   });
 
-  // User messages in private chat → forward to forum topic
-  bot.on('message:text', async (ctx) => {
+  // ────── User messages → forward to staff (all types: text, photo, file, etc.) ──────
+  bot.on('message', async (ctx) => {
     if (ctx.chat.type !== 'private') return;
+
+    // Ignore service messages (topic created, user joined, etc.)
+    if (!isUserContent(ctx.msg)) return;
+    // Ignore commands (handled by .command() handlers above)
+    if (ctx.msg.text?.startsWith('/')) return;
 
     const userId = ctx.from.id;
     if (store.isBanned(userId)) return;
+
+    // Spam check
+    const spam = checkSpam(userId);
+    if (!spam.allowed) {
+      await ctx.reply(`⏳ Вы превысили лимит сообщений. Подождите ${spam.remainingSec} секунд.`);
+      return;
+    }
 
     let topicId = store.getTopicId(userId);
 
@@ -232,8 +319,8 @@ export function registerHandlers(bot: Bot): void {
     await ctx.forwardMessage(staffGroupId, { message_thread_id: topicId });
   });
 
-  // Staff group: operator reply → user
-  bot.on('message:text', async (ctx) => {
+  // ────── Staff group: operator reply → user ──────
+  bot.on('message', async (ctx) => {
     if (ctx.chat.id !== staffGroupId || !ctx.msg.message_thread_id) return;
 
     // Ignore service messages
