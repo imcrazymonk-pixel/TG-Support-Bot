@@ -293,10 +293,34 @@ export function registerHandlers(bot: Bot): void {
     await ctx.reply(`✅ Пользователь ${userId} разблокирован. Он снова может писать в поддержку.`);
   });
 
-  // ────── User messages → forward to staff (all types: text, photo, file, etc.) ──────
+  // ────── All messages: route by chat ──────
   bot.on('message', async (ctx) => {
-    if (ctx.chat.type !== 'private') return;
+    // Staff group: operator reply → user
+    if (ctx.chat.id === staffGroupId && ctx.msg.message_thread_id) {
+      // Ignore service messages
+      if (ctx.msg.forum_topic_created || ctx.msg.forum_topic_closed || ctx.msg.forum_topic_reopened || ctx.msg.forum_topic_edited) return;
+      // Ignore bot's own messages
+      if (ctx.from?.id === bot.botInfo.id) return;
+      // Ignore commands (already handled above)
+      if (ctx.msg.text?.startsWith('/')) return;
 
+      const topicId = ctx.msg.message_thread_id;
+      const userId = store.getUserId(topicId);
+      if (!userId) return;
+
+      try {
+        await ctx.copyMessage(userId);
+        store.updateLastActivity(topicId);
+      } catch {
+        await ctx.reply('⚠️ Пользователь недоступен. Возможно, он удалил чат или заблокировал бота. Ответ не доставлен.', {
+          message_thread_id: topicId,
+        });
+      }
+      return;
+    }
+
+    // Private chat: user → staff
+    if (ctx.chat.type !== 'private') return;
     // Ignore service messages (topic created, user joined, etc.)
     if (!isUserContent(ctx.msg)) return;
     // Ignore commands (handled by .command() handlers above)
@@ -331,30 +355,5 @@ export function registerHandlers(bot: Bot): void {
 
     // First message from new user: forward and send info
     await ctx.forwardMessage(staffGroupId, { message_thread_id: topicId });
-  });
-
-  // ────── Staff group: operator reply → user ──────
-  bot.on('message', async (ctx) => {
-    if (ctx.chat.id !== staffGroupId || !ctx.msg.message_thread_id) return;
-
-    // Ignore service messages
-    if (ctx.msg.forum_topic_created || ctx.msg.forum_topic_closed || ctx.msg.forum_topic_reopened || ctx.msg.forum_topic_edited) return;
-    // Ignore bot's own messages
-    if (ctx.from?.id === bot.botInfo.id) return;
-    // Ignore commands (already handled above)
-    if (ctx.msg.text?.startsWith('/')) return;
-
-    const topicId = ctx.msg.message_thread_id;
-    const userId = store.getUserId(topicId);
-    if (!userId) return;
-
-    try {
-      await ctx.copyMessage(userId);
-      store.updateLastActivity(topicId);
-    } catch {
-      await ctx.reply('⚠️ Пользователь недоступен. Возможно, он удалил чат или заблокировал бота. Ответ не доставлен.', {
-        message_thread_id: topicId,
-      });
-    }
   });
 }
